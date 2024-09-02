@@ -1,0 +1,14 @@
+{'author': 'Sven Borkert <sven@borkert.net>',
+ 'description': 'SpecialAgent based plugin to perform FTP benchmark tests',
+ 'download_url': 'https://git.signintra.com/SWORD/checkmk-plugins',
+ 'files': {'cmk_addons_plugins': ['ftpbenchmark/libexec/check_ftpbenchmark',
+                                  'ftpbenchmark/rulesets/rulespec_active_ftpbenchmark.py',
+                                  'ftpbenchmark/server_side_calls/active_ftpbenchmark.py'
+                                  },
+ 'name': 'ftpbenchmark',
+ 'title': 'Title of ftpbenchmark',
+ 'version': '1.0.0',
+ 'version.min_required': '2.3.0p12',
+ 'version.packaged': 'cmk-mkp-tool 0.2.0',
+ 'version.usable_until': None
+ }

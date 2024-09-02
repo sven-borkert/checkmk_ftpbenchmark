@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+# -*- encoding: utf-8 -*-
+import ftplib
+import os
+import sys
+import random
+import string
+import hashlib
+import argparse
+from pathlib import Path
+import traceback
+
+import numpy as np
+from ftplib import FTP
+from timeit import default_timer as timer
+from cmk.utils import password_store
+
+
+def main():
+    args = parse_arguments()
+    try:
+        f = FTPBenchmark(args)
+        f.benchmark()
+        f.print()
+        sys.exit(f.state)
+    except ftplib.error_perm as e:
+        sys.stdout.write("FTPLIB ERROR - %s\n" % e)
+        return 3
+    except Exception as e:
+        sys.stdout.write("UNKNOWN - %s\n" % e)
+        sys.stdout.write(traceback.format_exc())
+        return 3
+
+
+def parse_arguments(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.formatter_class = argparse.RawTextHelpFormatter
+    parser.add_argument("--debug", "-d", action="store_true", help="Enable debug mode")
+    parser.add_argument("--verbose", "-v", action="count", default=0)
+    parser.add_argument("--host", help="FTP Server address", required=True)
+    parser.add_argument("--port", help="FTP Server port", required=False, type=int, default=21)
+    parser.add_argument("--user", help="Username", required=True)
+    parser.add_argument("--password", help="Password", required=True)
+    parser.add_argument("--active", help="Enable active mode transfer. Default is passive.", default=False, action='store_true')
+    parser.add_argument("--path", help="Path to testfile. (Will be created & deleted)", required=False, default="/ftpbenchmark.tmp")
+    parser.add_argument("--file-size", help="Size of testfile (Will be created & deleted)", required=False, type=int, default=100)
+    parser.add_argument("--upload", help="Enable upload benchmark", default=False, action='store_true' )
+    parser.add_argument("--upload-count", help="Number of files to upload in one execution", required=False, type=int, default=100)
+    parser.add_argument("--download", help="Enable download benchmark", default=False, action='store_true')
+    parser.add_argument("--download-count", help="Number of files to download in one execution", required=False, type=int, default=100)
+    args = parser.parse_args(argv)
+
+    if ":/omd/sites/" in args.password:
+        pw_id, pw_path = args.password.split(":")
+        args.password = password_store.lookup(Path(pw_path), pw_id)
+
+    args.path = args.path.replace("$pid", str(os.getpid()))
+
+    return args
+
+class FTPBenchmark:
+
+    def __init__(self, args):
+        self.args = args
+        self.connection = None
+        self.testfile = None
+        self.testfile_digest = None
+        self.state = 0
+        self.msg = None
+        self.perfdata = {}
+        self.details = []
+
+    def print(self):
+        perfdata = ""
+        n = 0
+        for key, value in self.perfdata.items():
+            if n > 0:
+                perfdata += " "
+            perfdata += f"{key}={value}"
+            n += 1
+
+        sys.stdout.write(f"{self.msg} | {perfdata}\n")
+        for line in self.details:
+            sys.stdout.write(line)
+            sys.stdout.write("\n")
+
+    def __log_details(self, msg):
+        self.details.append(msg)
+
+    def __get_authenticated_connection(self):
+        if self.connection is not None:
+            try:
+                self.connection.pwd()
+            except ftplib.all_errors as e:
+                self.__log_details("Connection alive check failed with: " + str(e))
+                self.connection = None
+        if self.connection is None:
+            # Connect to FTP
+            connection = FTP(timeout=10)
+            a = timer()
+            connection.connect(self.args.host, self.args.port, timeout=10)
+            self.perfdata['connect_duration'] = timer() - a
+            # Login
+            a = timer()
+            connection.login(self.args.user, self.args.password)
+            self.perfdata['login_duration'] = timer() - a
+            connection.set_pasv(not self.args.active)
+            self.connection = connection
+        return self.connection
+
+    def benchmark(self):
+
+        # Create and upload testfile
+        self.create_testfile()
+        with open(self.testfile, 'rb') as f:
+            rc=self.__get_authenticated_connection().storbinary("STOR " + self.args.path, f)
+        self.__log_details("Upload RC: " + str(rc))
+
+        # Perform benchmark
+        errors = 0
+        digest_errors = 0
+        exceptions = 0
+        timeouts = 0
+        transfers = []
+
+        for _ in range(self.args.download_count):
+            try:
+                with open(self.testfile + ".download", 'wb') as fp:
+                    a = timer()
+                    rc = self.__get_authenticated_connection().retrbinary("RETR " + self.args.path, fp.write)
+                    if not rc.startswith("226"):
+                        errors += 1
+                    transfers.append(timer() - a)
+                if not self.validate_download():
+                    digest_errors += 1
+                os.remove(self.testfile + ".download")
+            except TimeoutError as e:
+                timeouts+=1
+                self.connection = None
+            except Exception as e:
+                sys.stdout.write(traceback.format_exc())
+                exceptions += 1
+
+            self.perfdata['downloads'] = len(transfers)
+            self.perfdata['errors'] = errors
+            self.perfdata['digest_errors'] = digest_errors
+            self.perfdata['exceptions'] = exceptions
+            self.perfdata['duration'] = sum(transfers)
+            self.perfdata['average_download_seconds'] = np.mean(transfers)
+            self.perfdata['min_download_seconds'] = min(transfers)
+            self.perfdata['max_download_seconds'] = max(transfers)
+            self.perfdata['timeouts'] = timeouts
+
+        # Remove local and remote testfile
+        os.remove(self.testfile)
+        self.__get_authenticated_connection().delete(self.args.path)
+        self.__get_authenticated_connection().quit()
+
+        self.msg = "OK"
+        self.state = 0
+
+    def create_testfile(self):
+        testfile = os.environ["HOME"]+"/tmp/ftpbenchmark."+str(os.getpid())+".tmp"
+        with open(testfile, 'w') as f:
+            characters = string.ascii_letters + string.digits + string.punctuation + string.whitespace
+            for _ in range(self.args.file_size):
+                f.write(random.choice(characters))
+        with open(testfile, 'rb') as f:
+            testfile_digest = hashlib.file_digest(f, "sha256").hexdigest()
+        self.testfile = testfile
+        self.testfile_digest = testfile_digest
+
+    def validate_download(self) -> bool:
+        with open(self.testfile + ".download", 'rb') as f:
+            d = hashlib.file_digest(f, "sha256").hexdigest()
+        return self.testfile_digest == d
+
+if __name__ == "__main__":
+    sys.exit(main())
