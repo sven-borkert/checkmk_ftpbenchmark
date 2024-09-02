@@ -75,9 +75,8 @@ graph_b = graphs.Graph(
     name="upload_errors_combined",
     title=Title("Errors during upload benchmarking"),
     simple_lines=[
-        "download_digest_errors",
-        "download_errors",
-        "download_exceptions",
-        "download_timeouts"
+        "upload_errors",
+        "upload_exceptions",
+        "upload_timeouts"
     ]
 )

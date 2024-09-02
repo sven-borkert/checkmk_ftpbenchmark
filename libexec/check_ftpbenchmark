@@ -164,11 +164,11 @@ class FTPBenchmark(ActiveCheck):
                         self.log_details(traceback.format_exc())
                     self.increment_perf_data('download_exceptions')
 
-                self.set_perf_data('downloads', len(self.download_transfers))
-                self.set_perf_data('download_duration', sum(self.download_transfers))
-                self.set_perf_data('download_average_duration', np.mean(self.download_transfers))
-                self.set_perf_data('download_min_duration', min(self.download_transfers))
-                self.set_perf_data('download_max_duration', max(self.download_transfers))
+            self.set_perf_data('downloads', len(self.download_transfers))
+            self.set_perf_data('download_duration', sum(self.download_transfers))
+            self.set_perf_data('download_average_duration', np.mean(self.download_transfers))
+            self.set_perf_data('download_min_duration', min(self.download_transfers))
+            self.set_perf_data('download_max_duration', max(self.download_transfers))
 
             # Remove local and remote testfile
             os.remove(self.testfile)
@@ -200,6 +200,13 @@ class FTPBenchmark(ActiveCheck):
                     if self.args.verbose > 0:
                         self.log_details(traceback.format_exc())
                     self.increment_perf_data('upload_exceptions')
+
+            self.set_perf_data('uploads', len(self.upload_transfers))
+            self.set_perf_data('upload_duration', sum(self.upload_transfers))
+            self.set_perf_data('upload_average_duration', np.mean(self.upload_transfers))
+            self.set_perf_data('upload_min_duration', min(self.upload_transfers))
+            self.set_perf_data('upload_max_duration', max(self.upload_transfers))
+
             os.remove(self.testfile)
 
         self.__get_authenticated_connection().quit()
