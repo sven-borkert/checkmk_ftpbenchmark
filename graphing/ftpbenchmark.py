@@ -20,14 +20,14 @@ metric_b = metrics.Metric(
 
 metric_c = metrics.Metric(
     name="download_errors",
-    title=Title("Error responses during uploads"),
+    title=Title("Error responses during downloads"),
     unit=UNIT_NUMBER,
     color=metrics.Color.LIGHT_RED
 )
 
 metric_d = metrics.Metric(
     name="download_exceptions",
-    title=Title("Exceptions thrown during uploads"),
+    title=Title("Exceptions thrown during downloads"),
     unit=UNIT_NUMBER,
     color=metrics.Color.DARK_RED
 )
